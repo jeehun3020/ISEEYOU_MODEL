@@ -19,6 +19,7 @@ from .detectors.base import BaseFaceDetector
 from .detectors.factory import build_face_detector
 from .manifest import write_manifest
 from .split import create_group_splits
+from .views import extract_frame_view
 
 
 @dataclass
@@ -68,6 +69,7 @@ def _mask_bbox_region(
     x2: int,
     y2: int,
     padding_ratio: float = 0.15,
+    fill_mode: str = "median",
 ) -> np.ndarray:
     masked = image_rgb.copy()
     h, w = masked.shape[:2]
@@ -79,8 +81,42 @@ def _mask_bbox_region(
     yy1 = max(0, y1 - pad_h)
     xx2 = min(w, x2 + pad_w)
     yy2 = min(h, y2 + pad_h)
-    fill_value = np.median(masked.reshape(-1, 3), axis=0).astype(np.uint8)
+    if str(fill_mode).lower() == "black":
+        fill_value = np.zeros(3, dtype=np.uint8)
+    else:
+        fill_value = np.median(masked.reshape(-1, 3), axis=0).astype(np.uint8)
     masked[yy1:yy2, xx1:xx2] = fill_value
+    return masked
+
+
+def _spotlight_bbox_region(
+    image_rgb: np.ndarray,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    padding_ratio: float = 0.15,
+    fill_mode: str = "black",
+) -> np.ndarray:
+    spotlight = image_rgb.copy()
+    h, w = spotlight.shape[:2]
+    bw = x2 - x1
+    bh = y2 - y1
+    pad_w = int(max(1, bw) * padding_ratio)
+    pad_h = int(max(1, bh) * padding_ratio)
+    xx1 = max(0, x1 - pad_w)
+    yy1 = max(0, y1 - pad_h)
+    xx2 = min(w, x2 + pad_w)
+    yy2 = min(h, y2 + pad_h)
+
+    if str(fill_mode).lower() == "median":
+        fill_value = np.median(spotlight.reshape(-1, 3), axis=0).astype(np.uint8)
+    else:
+        fill_value = np.zeros(3, dtype=np.uint8)
+
+    masked = np.empty_like(spotlight)
+    masked[:] = fill_value
+    masked[yy1:yy2, xx1:xx2] = spotlight[yy1:yy2, xx1:xx2]
     return masked
 
 
@@ -90,47 +126,12 @@ def _extract_frame_view(
     fallback_to_full_frame: bool,
     view_mode: str,
 ) -> np.ndarray | None:
-    normalized_mode = str(view_mode or "detector_crop").lower()
-    if normalized_mode == "full_frame":
-        return image_rgb
-
-    detections = detector.detect(image_rgb)
-    primary = detector.select_primary(detections, image_rgb.shape)
-
-    if normalized_mode == "background_masked":
-        if primary is None:
-            if fallback_to_full_frame:
-                return image_rgb
-            return None
-        return _mask_bbox_region(
-            image_rgb,
-            x1=primary.x1,
-            y1=primary.y1,
-            x2=primary.x2,
-            y2=primary.y2,
-        )
-
-    if normalized_mode != "detector_crop":
-        raise ValueError(f"Unsupported preprocess.view_mode: {view_mode}")
-
-    if primary is None:
-        if fallback_to_full_frame:
-            return image_rgb
-        return None
-
-    crop = _crop_from_bbox(
-        image_rgb,
-        x1=primary.x1,
-        y1=primary.y1,
-        x2=primary.x2,
-        y2=primary.y2,
+    return extract_frame_view(
+        image_rgb=image_rgb,
+        detector=detector,
+        fallback_to_full_frame=fallback_to_full_frame,
+        view_mode=view_mode,
     )
-    if crop is None or crop.size == 0:
-        if fallback_to_full_frame:
-            return image_rgb
-        return None
-
-    return crop
 
 
 def _extract_face_or_full_frame(
@@ -192,6 +193,7 @@ def _process_video_sample(
         rows.append(
             {
                 "split": split_name,
+                "split_tag": split_name,
                 "dataset": sample.dataset,
                 "class_name": sample.class_name,
                 "frame_path": str(out_path),
@@ -201,6 +203,16 @@ def _process_video_sample(
                 "identity_id": sample.identity_id,
                 "source_id": sample.source_id,
                 "original_id": sample.original_id,
+                "platform_id": sample.platform_id,
+                "creator_account": sample.creator_account,
+                "generator_family": sample.generator_family,
+                "template_id": sample.template_id,
+                "prompt_id": sample.prompt_id,
+                "scene_id": sample.scene_id,
+                "source_url": sample.source_url,
+                "source_family": sample.source_family,
+                "raw_asset_group": sample.raw_asset_group,
+                "upload_pipeline": sample.upload_pipeline,
             }
         )
         stats.extracted_frames += 1
@@ -245,6 +257,7 @@ def _process_image_sample(
     return [
         {
             "split": split_name,
+            "split_tag": split_name,
             "dataset": sample.dataset,
             "class_name": sample.class_name,
             "frame_path": str(out_path),
@@ -254,6 +267,16 @@ def _process_image_sample(
             "identity_id": sample.identity_id,
             "source_id": sample.source_id,
             "original_id": sample.original_id,
+            "platform_id": sample.platform_id,
+            "creator_account": sample.creator_account,
+            "generator_family": sample.generator_family,
+            "template_id": sample.template_id,
+            "prompt_id": sample.prompt_id,
+            "scene_id": sample.scene_id,
+            "source_url": sample.source_url,
+            "source_family": sample.source_family,
+            "raw_asset_group": sample.raw_asset_group,
+            "upload_pipeline": sample.upload_pipeline,
         }
     ]
 

@@ -1,0 +1,165 @@
+seed: 42
+paths:
+  processed_faces_dir: data/processed/faces_allvideo_binary_face_protocol
+  manifests_dir: data/manifests_allvideo_binary_face_protocol
+  checkpoints_dir: outputs/checkpoints_allvideo_binary_face_protocol
+  eval_dir: outputs/eval
+  inference_dir: outputs/inference
+task:
+  mode: binary
+  classes:
+  - real
+  - generated
+  positive_classes:
+  - generated
+datasets:
+  ucf101:
+    enabled: true
+    parser: ucf101
+    root: UCF101-Action Recognition
+    class_name: real
+    max_samples: 2500
+    platform_id: ucf101
+    creator_account: ucf101
+  youtube_shorts_real:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_binary/real
+    class_name: real
+    platform_id: youtube
+  youtube_shorts_real_hardnegative:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_real_hardnegative/real
+    class_name: real
+    platform_id: youtube
+  youtube_shorts_real_hardnegative_query:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_real_hardnegative_query/real
+    class_name: real
+    platform_id: youtube
+  youtube_shorts_generated:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_binary/generated
+    class_name: generated
+    platform_id: youtube
+    generator_family: youtube_native
+  genimage_local:
+    enabled: true
+    parser: generic
+    root: /Users/jeongjihoon/Desktop/Capstone/gen_img
+    media_type: image
+    class_name: generated
+    platform_id: genimage
+    creator_account: genimage
+    generator_family: genimage
+  faceforensicspp:
+    enabled: true
+    parser: faceforensicspp
+    root: FaceForensics++_C23
+    class_name: generated
+    include_original_sequences: false
+    max_samples: 2500
+    platform_id: faceforensicspp
+    creator_account: faceforensicspp
+  celebdf:
+    enabled: true
+    parser: celebdf
+    root: Celeb_V2
+    class_name: generated
+    include_real: false
+    max_samples: 2500
+    platform_id: celebdf
+    creator_account: celebdf
+    generator_family: celebdf
+  voxceleb2:
+    enabled: false
+    parser: voxceleb2
+    root: VoxCeleb2
+    class_name: real
+split:
+  val_ratio: 0.15
+  test_ratio: 0.15
+  group_priority:
+  - creator_account
+  - generator_family
+  - source_id
+  - original_id
+  - identity_id
+  - video_id
+preprocess:
+  target_fps: 1
+  max_frames_per_video: 6
+  image_size: 224
+  view_mode: detector_crop
+  fallback_to_full_frame: false
+  text_mask:
+    enabled: true
+    top_ratio: 0.08
+    bottom_ratio: 0.18
+    left_ratio: 0.0
+    right_ratio: 0.0
+    position_mode: fixed
+    fill_mode: median
+  detector:
+    name: mtcnn
+    device: cpu
+training:
+  device: auto
+  backbone: efficientnet_b0
+  pretrained: true
+  dropout: 0.4
+  input_representation: rgb
+  grad_clip_norm: 1.0
+  batch_size: 32
+  num_workers: 2
+  epochs: 12
+  lr: 0.0001
+  weight_decay: 0.0005
+  amp: true
+  monitor: f1
+  loss:
+    label_smoothing: 0.05
+    use_class_weights: true
+  sampling:
+    balanced_sampler: true
+  early_stopping:
+    patience: 4
+    min_delta: 0.001
+  augmentation:
+    hflip_p: 0.5
+    color_jitter: true
+    color_jitter_strength: 0.2
+    random_erasing: true
+    random_erasing_p: 0.35
+    text_mask_aug:
+      enabled: false
+      p: 0.6
+      top_ratio_range:
+      - 0.0
+      - 0.1
+      bottom_ratio_range:
+      - 0.08
+      - 0.24
+      left_ratio_range:
+      - 0.0
+      - 0.0
+      right_ratio_range:
+      - 0.0
+      - 0.0
+      position_mode: fixed
+      fill_mode: median
+inference:
+  batch_size: 32
+  aggregation: confidence_mean
+  input_representation: rgb
+  min_confidence: 0.55
+  topk_ratio: 0.5
+  conf_power: 2.0
+evaluation:
+  video_aggregation: confidence_mean
+  input_representation: rgb
+  topk_ratio: 0.5
+  conf_power: 2.0

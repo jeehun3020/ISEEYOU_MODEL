@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from iseeyou.config import ensure_dir, load_config
 from iseeyou.constants import build_task_spec
 from iseeyou.data.dataset import FaceFrameDataset
+from iseeyou.data.protocol_dataset import VideoManifestFrameDataset
 from iseeyou.data.transforms import build_eval_transform
 from iseeyou.engine.evaluator import load_model_from_checkpoint
 from iseeyou.utils.aggregation import build_video_level_predictions
@@ -31,13 +32,24 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Path to checkpoint (.pt). Default: paths.checkpoints_dir/best.pt",
     )
-    parser.add_argument("--split", type=str, default="test", choices=["train", "val", "test"])
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        choices=["train", "val", "test", "stress_real", "stress_generated"],
+    )
     parser.add_argument(
         "--video-aggregation",
         type=str,
         default="",
         choices=[""] + AGG_CHOICES,
         help="Video-level aggregation method. Default uses config.evaluation.video_aggregation",
+    )
+    parser.add_argument(
+        "--video-manifest",
+        type=str,
+        default="",
+        help="Optional protocol video_manifest.csv override",
     )
     return parser.parse_args()
 
@@ -104,16 +116,30 @@ def main() -> None:
         config["training"].get("input_representation", "rgb"),
     )
 
-    manifests_dir = Path(config["paths"]["manifests_dir"])
-    manifest_path = manifests_dir / f"{args.split}.csv"
+    video_manifest_path = args.video_manifest or config.get("paths", {}).get("video_manifest_path", "")
+    if video_manifest_path:
+        dataset = VideoManifestFrameDataset(
+            video_manifest_path=video_manifest_path,
+            task_spec=task_spec,
+            split_tags=(args.split,),
+            preprocess_cfg=config["preprocess"],
+            augmentation_cfg=None,
+            train_mode=False,
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
+        dataset_hint = str(video_manifest_path)
+    else:
+        manifests_dir = Path(config["paths"]["manifests_dir"])
+        manifest_path = manifests_dir / f"{args.split}.csv"
+        dataset = FaceFrameDataset(
+            manifest_path=manifest_path,
+            task_spec=task_spec,
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
+        dataset_hint = str(manifest_path)
 
-    dataset = FaceFrameDataset(
-        manifest_path=manifest_path,
-        task_spec=task_spec,
-        transform=build_eval_transform(image_size, input_representation=input_representation),
-    )
     if len(dataset) == 0:
-        raise ValueError(f"Empty evaluation dataset: {manifest_path}")
+        raise ValueError(f"Empty evaluation dataset: {dataset_hint}")
 
     training_cfg = config["training"]
     device = resolve_device(training_cfg.get("device", "auto"))
@@ -130,7 +156,7 @@ def main() -> None:
     checkpoint_path = (
         Path(args.checkpoint)
         if args.checkpoint
-        else Path(config["paths"]["checkpoints_dir"]) / "best.pt"
+        else Path(config.get("paths", {}).get("checkpoints_dir", "outputs/checkpoints_protocol_frame")) / "best.pt"
     )
 
     model, _ = load_model_from_checkpoint(
@@ -138,6 +164,8 @@ def main() -> None:
         backbone=training_cfg["backbone"],
         num_classes=task_spec.num_classes,
         dropout=training_cfg.get("dropout", 0.0),
+        freeze_backbone=bool(training_cfg.get("freeze_backbone", False)),
+        hidden_dim=int(training_cfg.get("hidden_dim", 0) or 0),
         device=device,
     )
 

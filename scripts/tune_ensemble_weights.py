@@ -19,6 +19,7 @@ if str(ROOT_DIR) not in sys.path:
 from iseeyou.config import ensure_dir, load_config
 from iseeyou.constants import build_task_spec
 from iseeyou.data.dataset import FaceFrameDataset
+from iseeyou.data.protocol_dataset import VideoManifestFrameDataset, VideoManifestSequenceDataset
 from iseeyou.data.sequence_dataset import VideoSequenceDataset
 from iseeyou.data.transforms import build_eval_transform
 from iseeyou.engine.evaluator import load_model_from_checkpoint
@@ -64,8 +65,6 @@ def collect_frame_predictions(
     checkpoint_path: Path,
     device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    manifests_dir = Path(config["paths"]["manifests_dir"])
-    manifest_path = manifests_dir / f"{split}.csv"
     image_size = config["preprocess"]["image_size"]
     eval_cfg = config.get("evaluation", {})
     training_cfg = config["training"]
@@ -74,12 +73,25 @@ def collect_frame_predictions(
         training_cfg.get("input_representation", "rgb"),
     )
     num_workers = resolve_num_workers(training_cfg["num_workers"])
-
-    dataset = FaceFrameDataset(
-        manifest_path=manifest_path,
-        task_spec=task_spec,
-        transform=build_eval_transform(image_size, input_representation=input_representation),
-    )
+    video_manifest_path = config.get("paths", {}).get("video_manifest_path", "")
+    if video_manifest_path:
+        dataset = VideoManifestFrameDataset(
+            video_manifest_path=video_manifest_path,
+            task_spec=task_spec,
+            split_tags=(split,),
+            preprocess_cfg=config["preprocess"],
+            augmentation_cfg=None,
+            train_mode=False,
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
+    else:
+        manifests_dir = Path(config["paths"]["manifests_dir"])
+        manifest_path = manifests_dir / f"{split}.csv"
+        dataset = FaceFrameDataset(
+            manifest_path=manifest_path,
+            task_spec=task_spec,
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
     loader = DataLoader(
         dataset,
         batch_size=training_cfg["batch_size"],
@@ -92,6 +104,8 @@ def collect_frame_predictions(
         backbone=training_cfg["backbone"],
         num_classes=task_spec.num_classes,
         dropout=training_cfg.get("dropout", 0.0),
+        freeze_backbone=bool(training_cfg.get("freeze_backbone", False)),
+        hidden_dim=int(training_cfg.get("hidden_dim", 0) or 0),
         device=device,
     )
 
@@ -123,8 +137,6 @@ def collect_temporal_predictions(
     checkpoint_path: Path,
     device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    manifests_dir = Path(config["paths"]["manifests_dir"])
-    manifest_path = manifests_dir / f"{split}.csv"
     image_size = config["preprocess"]["image_size"]
     temporal_cfg = config.get("temporal", {})
     dataset_cfg = temporal_cfg.get("dataset", {})
@@ -136,16 +148,33 @@ def collect_temporal_predictions(
     )
     num_workers = resolve_num_workers(int(training_cfg.get("num_workers", 2)))
 
-    dataset = VideoSequenceDataset(
-        manifest_path=manifest_path,
-        task_spec=task_spec,
-        sequence_length=int(dataset_cfg.get("sequence_length", 8)),
-        sampling="uniform",
-        min_frames_per_video=int(dataset_cfg.get("min_frames_per_video", 1)),
-        frame_mode=dataset_cfg.get("frame_mode", "rgb"),
-        train_mode=False,
-        transform=build_eval_transform(image_size, input_representation=input_representation),
-    )
+    video_manifest_path = config.get("paths", {}).get("video_manifest_path", "")
+    if video_manifest_path:
+        dataset = VideoManifestSequenceDataset(
+            video_manifest_path=video_manifest_path,
+            task_spec=task_spec,
+            split_tags=(split,),
+            sequence_length=int(dataset_cfg.get("sequence_length", 8)),
+            sampling="uniform",
+            frame_mode=dataset_cfg.get("frame_mode", "rgb"),
+            order_mode=dataset_cfg.get("order_mode", "preserve"),
+            train_mode=False,
+            preprocess_cfg=config["preprocess"],
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
+    else:
+        manifests_dir = Path(config["paths"]["manifests_dir"])
+        manifest_path = manifests_dir / f"{split}.csv"
+        dataset = VideoSequenceDataset(
+            manifest_path=manifest_path,
+            task_spec=task_spec,
+            sequence_length=int(dataset_cfg.get("sequence_length", 8)),
+            sampling="uniform",
+            min_frames_per_video=int(dataset_cfg.get("min_frames_per_video", 1)),
+            frame_mode=dataset_cfg.get("frame_mode", "rgb"),
+            train_mode=False,
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
     loader = DataLoader(
         dataset,
         batch_size=int(training_cfg.get("batch_size", 8)),

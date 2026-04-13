@@ -108,6 +108,8 @@ def main() -> None:
         backbone=training_cfg["backbone"],
         num_classes=task_spec.num_classes,
         dropout=training_cfg.get("dropout", 0.0),
+        freeze_backbone=bool(training_cfg.get("freeze_backbone", False)),
+        hidden_dim=int(training_cfg.get("hidden_dim", 0) or 0),
         device=device,
     )
     temporal_model, _ = load_temporal_model_from_checkpoint(

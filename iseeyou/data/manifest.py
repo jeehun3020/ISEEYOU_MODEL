@@ -5,6 +5,7 @@ from pathlib import Path
 
 MANIFEST_COLUMNS = [
     "split",
+    "split_tag",
     "dataset",
     "class_name",
     "frame_path",
@@ -14,6 +15,16 @@ MANIFEST_COLUMNS = [
     "identity_id",
     "source_id",
     "original_id",
+    "platform_id",
+    "creator_account",
+    "generator_family",
+    "template_id",
+    "prompt_id",
+    "scene_id",
+    "source_url",
+    "source_family",
+    "raw_asset_group",
+    "upload_pipeline",
 ]
 
 

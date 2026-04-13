@@ -1,0 +1,196 @@
+seed: 42
+
+paths:
+  video_manifest_path: data/manifests_protocol_youtube_dataset/video_manifest.csv
+  eval_dir: outputs/eval
+  protocol_report_dir: outputs/protocol/youtube_dataset
+  checkpoints_dir: outputs/checkpoints_protocol_youtube_dataset_fft_amplitude
+  temporal_checkpoints_dir: outputs/checkpoints_protocol_youtube_dataset_temporal
+  inference_dir: outputs/inference
+
+task:
+  mode: binary
+  classes: [real, generated]
+  positive_classes: [generated]
+
+datasets:
+  ytd_train_real:
+    enabled: true
+    parser: youtube_dataset_downloaded
+    root: /Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/train/real
+    class_name: real
+    platform_id: youtube
+    source_family: youtube_dataset
+    upload_pipeline: youtube_dataset_packaged
+    split_role: train
+  ytd_train_generated:
+    enabled: true
+    parser: youtube_dataset_downloaded
+    root: /Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/train/generated
+    class_name: generated
+    platform_id: youtube
+    source_family: youtube_dataset
+    upload_pipeline: youtube_dataset_packaged
+    split_role: train
+  ytd_val_real:
+    enabled: true
+    parser: youtube_dataset_downloaded
+    root: /Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/val/real
+    class_name: real
+    platform_id: youtube
+    source_family: youtube_dataset
+    upload_pipeline: youtube_dataset_packaged
+    split_role: val
+  ytd_val_generated:
+    enabled: true
+    parser: youtube_dataset_downloaded
+    root: /Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/val/generated
+    class_name: generated
+    platform_id: youtube
+    source_family: youtube_dataset
+    upload_pipeline: youtube_dataset_packaged
+    split_role: val
+  ytd_test_real:
+    enabled: true
+    parser: youtube_dataset_downloaded
+    root: /Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/test/real
+    class_name: real
+    platform_id: youtube
+    source_family: youtube_dataset
+    upload_pipeline: youtube_dataset_packaged
+    split_role: test
+  ytd_test_generated:
+    enabled: true
+    parser: youtube_dataset_downloaded
+    root: /Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/test/generated
+    class_name: generated
+    platform_id: youtube
+    source_family: youtube_dataset
+    upload_pipeline: youtube_dataset_packaged
+    split_role: test
+  youtube_stress_real_known:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_real_hardnegative/real
+    class_name: real
+    platform_id: youtube
+    source_family: youtube_shorts
+    upload_pipeline: youtube_native
+    split_role: stress_real
+  youtube_stress_real_query:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_real_hardnegative_query/real
+    class_name: real
+    platform_id: youtube
+    source_family: youtube_shorts
+    upload_pipeline: youtube_native
+    split_role: stress_real
+  youtube_stress_generated_hardcase:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_hardcase/hardcase
+    class_name: generated
+    platform_id: youtube
+    source_family: youtube_shorts
+    upload_pipeline: youtube_native
+    split_role: stress_generated
+  youtube_stress_generated_hardcase_extra:
+    enabled: true
+    parser: youtube_shorts
+    root: data/raw/youtube_shorts_hardcase_extra/hardcase
+    class_name: generated
+    platform_id: youtube
+    source_family: youtube_shorts
+    upload_pipeline: youtube_native
+    split_role: stress_generated
+
+split:
+  val_ratio: 0.0
+  test_ratio: 0.0
+  group_priority:
+    - creator_account+raw_asset_group+generator_family+upload_pipeline
+    - source_id
+    - original_id
+    - identity_id
+    - video_id
+
+preprocess:
+  image_size: 224
+  max_frames_per_video: 6
+  frame_sampling_mode: anchor
+  view_mode: full_frame
+  fallback_to_full_frame: true
+  text_mask:
+    enabled: true
+    top_ratio: 0.08
+    bottom_ratio: 0.18
+    left_ratio: 0.0
+    right_ratio: 0.0
+    position_mode: fixed
+    fill_mode: median
+  detector:
+    name: none
+    device: cpu
+
+protocol:
+  sampled_frames: 6
+  low_res_shorter_edge: 480
+  overlay_text_ratio: 0.03
+  high_text_quantile: 0.67
+  low_text_quantile: 0.33
+  high_motion_quantile: 0.67
+  low_motion_quantile: 0.33
+  leakage_warning:
+    auc_threshold: 0.65
+    accuracy_threshold: 0.65
+
+training:
+  device: auto
+  backbone: efficientnet_b0
+  pretrained: true
+  dropout: 0.4
+  input_representation: fft_amplitude
+  grad_clip_norm: 1.0
+  batch_size: 32
+  num_workers: 2
+  epochs: 10
+  lr: 0.0001
+  weight_decay: 0.0005
+  amp: true
+  monitor: f1
+  loss:
+    label_smoothing: 0.05
+    use_class_weights: true
+  sampling:
+    balanced_sampler: true
+  early_stopping:
+    patience: 3
+    min_delta: 0.001
+  augmentation:
+    hflip_p: 0.5
+    random_erasing: true
+    random_erasing_p: 0.20
+    text_mask_aug:
+      enabled: true
+      p: 0.6
+      top_ratio_range: [0.0, 0.10]
+      bottom_ratio_range: [0.08, 0.24]
+      left_ratio_range: [0.0, 0.0]
+      right_ratio_range: [0.0, 0.0]
+      position_mode: fixed
+      fill_mode: median
+
+inference:
+  batch_size: 32
+  aggregation: confidence_mean
+  input_representation: fft_amplitude
+  min_confidence: 0.55
+  topk_ratio: 0.5
+  conf_power: 2.0
+
+evaluation:
+  video_aggregation: confidence_mean
+  input_representation: fft_amplitude
+  topk_ratio: 0.5
+  conf_power: 2.0

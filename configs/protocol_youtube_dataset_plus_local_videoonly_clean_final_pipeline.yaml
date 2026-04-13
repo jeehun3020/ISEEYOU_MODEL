@@ -1,0 +1,60 @@
+seed: 42
+
+paths:
+  inference_dir: outputs/inference
+
+preprocess:
+  target_fps: 1
+  image_size: 224
+  max_frames_per_video: 6
+  frame_sampling_mode: anchor
+  view_mode: full_frame
+  fallback_to_full_frame: true
+  text_mask:
+    enabled: true
+    top_ratio: 0.08
+    bottom_ratio: 0.18
+    left_ratio: 0.0
+    right_ratio: 0.0
+    position_mode: fixed
+    fill_mode: median
+  detector:
+    name: none
+    device: cpu
+
+task:
+  mode: binary
+  classes: [real, generated]
+  positive_classes: [generated]
+
+training:
+  device: auto
+  backbone: efficientnet_b0
+  dropout: 0.4
+  input_representation: rgb
+
+inference:
+  batch_size: 32
+  aggregation: confidence_mean
+  input_representation: rgb
+  min_confidence: 0.55
+  topk_ratio: 0.5
+  conf_power: 2.0
+  youtube_download_dir: outputs/inference/downloads
+
+final_pipeline:
+  policy_json: outputs/eval/final_video_pipeline_policy.json
+  policy:
+    primary_weight: 0.75
+    verifier_weight: 0.25
+    lower_fake_prob: 0.20
+    upper_fake_prob: 0.80
+    disagreement_gap: 0.25
+  primary:
+    name: robustaug
+    config: configs/protocol_youtube_dataset_plus_local_videoonly_clean_robustaug.yaml
+    checkpoint: outputs/checkpoints_protocol_youtube_dataset_plus_local_videoonly_clean_robustaug_frame/best.pt
+  verifier:
+    name: frozen_convnext
+    config: configs/protocol_youtube_dataset_plus_local_videoonly_clean_frozen_convnext.yaml
+    checkpoint: outputs/checkpoints_protocol_youtube_dataset_plus_local_videoonly_clean_frozen_convnext_frame/best.pt

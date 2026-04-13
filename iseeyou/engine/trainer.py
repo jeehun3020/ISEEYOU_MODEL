@@ -109,15 +109,18 @@ def fit_model(
     task_spec: TaskSpec,
     training_cfg: dict,
     output_dir: str | Path,
+    resume_checkpoint: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    history_path = output_dir / "history.json"
 
     epochs = int(training_cfg["epochs"])
     monitor_name = training_cfg.get("monitor", "f1")
     amp = _amp_enabled(device, bool(training_cfg.get("amp", False)))
     scaler = torch.cuda.amp.GradScaler(enabled=amp)
 
+    start_epoch = 1
     best_metric = -float("inf")
     best_epoch = 0
     history: list[dict[str, Any]] = []
@@ -127,7 +130,69 @@ def fit_model(
     stale_epochs = 0
     grad_clip_norm = float(training_cfg.get("grad_clip_norm", 0.0) or 0.0)
 
-    for epoch in range(1, epochs + 1):
+    if resume_checkpoint:
+        if "model_state_dict" in resume_checkpoint:
+            model.load_state_dict(resume_checkpoint["model_state_dict"])
+        if resume_checkpoint.get("optimizer_state_dict"):
+            optimizer.load_state_dict(resume_checkpoint["optimizer_state_dict"])
+        if scheduler is not None:
+            scheduler_state = resume_checkpoint.get("scheduler_state_dict")
+            resumed_epoch = int(resume_checkpoint.get("epoch", 0) or 0)
+            if scheduler_state:
+                scheduler.load_state_dict(scheduler_state)
+            elif resumed_epoch > 0:
+                try:
+                    scheduler.step(resumed_epoch)
+                except Exception:
+                    for _ in range(resumed_epoch):
+                        scheduler.step()
+        if amp and resume_checkpoint.get("scaler_state_dict"):
+            scaler.load_state_dict(resume_checkpoint["scaler_state_dict"])
+
+        history = list(resume_checkpoint.get("history", []) or [])
+        best_metric = float(resume_checkpoint.get("best_metric", best_metric))
+        best_epoch = int(resume_checkpoint.get("best_epoch", best_epoch) or 0)
+        stale_epochs = int(resume_checkpoint.get("stale_epochs", stale_epochs) or 0)
+        start_epoch = int(resume_checkpoint.get("epoch", 0) or 0) + 1
+
+        if (not np.isfinite(best_metric)) and (output_dir / "best.pt").exists():
+            current_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_checkpoint = torch.load(output_dir / "best.pt", map_location=device)
+            if "model_state_dict" in best_checkpoint:
+                model.load_state_dict(best_checkpoint["model_state_dict"])
+                best_val_metrics = evaluate_loader(
+                    model=model,
+                    loader=val_loader,
+                    criterion=criterion,
+                    device=device,
+                    num_classes=task_spec.num_classes,
+                )
+                hydrated_best_metric = float(best_val_metrics.get(monitor_name, float("nan")))
+                if np.isfinite(hydrated_best_metric):
+                    best_metric = hydrated_best_metric
+                best_epoch = int(best_checkpoint.get("epoch", best_epoch) or best_epoch)
+                print(
+                    f"[INFO] hydrated best checkpoint metric from {output_dir / 'best.pt'}: "
+                    f"best_epoch={best_epoch} best_{monitor_name}={best_metric:.4f}"
+                )
+            model.load_state_dict(current_state)
+
+        print(
+            f"[INFO] resume enabled: start_epoch={start_epoch} "
+            f"best_epoch={best_epoch} best_{monitor_name}={best_metric:.4f} "
+            f"stale_epochs={stale_epochs}"
+        )
+
+    if start_epoch > epochs:
+        history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        return {
+            "best_metric": best_metric,
+            "best_epoch": best_epoch,
+            "history_path": str(history_path),
+            "checkpoint_dir": str(output_dir),
+        }
+
+    for epoch in range(start_epoch, epochs + 1):
         train_loss = train_one_epoch(
             model=model,
             loader=train_loader,
@@ -169,22 +234,32 @@ def fit_model(
             f"val_auc={val_metrics['auc']:.4f}"
         )
 
-        checkpoint = {
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "task_spec": asdict(task_spec),
-            "training_cfg": training_cfg,
-        }
-
-        torch.save(checkpoint, output_dir / "last.pt")
-
         if is_improved:
             best_metric = current_metric
             best_epoch = epoch
             stale_epochs = 0
-            torch.save(checkpoint, output_dir / "best.pt")
         else:
             stale_epochs += 1
+
+        checkpoint = {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict() if scheduler is not None else None,
+            "scaler_state_dict": scaler.state_dict() if amp else None,
+            "task_spec": asdict(task_spec),
+            "training_cfg": training_cfg,
+            "best_metric": best_metric,
+            "best_epoch": best_epoch,
+            "stale_epochs": stale_epochs,
+            "history": history,
+        }
+
+        torch.save(checkpoint, output_dir / "last.pt")
+        history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+
+        if is_improved:
+            torch.save(checkpoint, output_dir / "best.pt")
 
         if patience > 0 and stale_epochs >= patience:
             print(
@@ -193,7 +268,6 @@ def fit_model(
             )
             break
 
-    history_path = output_dir / "history.json"
     history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
     return {

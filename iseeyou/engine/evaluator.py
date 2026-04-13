@@ -17,14 +17,19 @@ def load_model_from_checkpoint(
     backbone: str,
     num_classes: int,
     dropout: float,
+    freeze_backbone: bool,
+    hidden_dim: int,
     device: torch.device,
 ) -> tuple[torch.nn.Module, dict[str, Any]]:
     checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint_training_cfg = checkpoint.get("training_cfg", {}) or {}
     model = build_model(
-        backbone=backbone,
+        backbone=str(checkpoint_training_cfg.get("backbone", backbone)),
         num_classes=num_classes,
         pretrained=False,
-        dropout=dropout,
+        dropout=float(checkpoint_training_cfg.get("dropout", dropout)),
+        freeze_backbone=bool(checkpoint_training_cfg.get("freeze_backbone", freeze_backbone)),
+        hidden_dim=int(checkpoint_training_cfg.get("hidden_dim", hidden_dim) or 0),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
@@ -46,6 +51,8 @@ def run_evaluation(
         backbone=backbone,
         num_classes=task_spec.num_classes,
         dropout=dropout,
+        freeze_backbone=False,
+        hidden_dim=0,
         device=device,
     )
 

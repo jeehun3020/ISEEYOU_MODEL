@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from iseeyou.config import ensure_dir, load_config
 from iseeyou.constants import build_task_spec
 from iseeyou.data.dataset import FaceFrameDataset
+from iseeyou.data.protocol_dataset import VideoManifestFrameDataset
 from iseeyou.data.transforms import build_eval_transform, build_train_transform
 from iseeyou.engine.trainer import fit_model
 from iseeyou.models.builder import build_model
@@ -22,6 +23,18 @@ from iseeyou.utils.seed import set_seed
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train frame-based classifier")
     parser.add_argument("--config", type=str, required=True, help="Path to config yaml")
+    parser.add_argument(
+        "--video-manifest",
+        type=str,
+        default="",
+        help="Optional protocol video_manifest.csv override",
+    )
+    parser.add_argument(
+        "--resume-from",
+        type=str,
+        default="",
+        help="Optional checkpoint path to resume or warm-start from",
+    )
     return parser.parse_args()
 
 
@@ -45,39 +58,67 @@ def main() -> None:
 
     task_spec = build_task_spec(config["task"])
 
-    manifests_dir = Path(config["paths"]["manifests_dir"])
-    train_manifest = manifests_dir / "train.csv"
-    val_manifest = manifests_dir / "val.csv"
     training_cfg = config["training"]
 
     image_size = config["preprocess"]["image_size"]
     augmentation_cfg = training_cfg.get("augmentation", {})
     input_representation = training_cfg.get("input_representation", "rgb")
+    video_manifest_path = args.video_manifest or config.get("paths", {}).get("video_manifest_path", "")
 
-    train_dataset = FaceFrameDataset(
-        manifest_path=train_manifest,
-        task_spec=task_spec,
-        transform=build_train_transform(
-            image_size,
-            aug_cfg=augmentation_cfg,
-            input_representation=input_representation,
-        ),
-    )
-    val_dataset = FaceFrameDataset(
-        manifest_path=val_manifest,
-        task_spec=task_spec,
-        transform=build_eval_transform(image_size, input_representation=input_representation),
-    )
+    if video_manifest_path:
+        train_dataset = VideoManifestFrameDataset(
+            video_manifest_path=video_manifest_path,
+            task_spec=task_spec,
+            split_tags=("train",),
+            preprocess_cfg=config["preprocess"],
+            augmentation_cfg=augmentation_cfg,
+            train_mode=True,
+            transform=build_train_transform(
+                image_size,
+                aug_cfg=augmentation_cfg,
+                input_representation=input_representation,
+            ),
+        )
+        val_dataset = VideoManifestFrameDataset(
+            video_manifest_path=video_manifest_path,
+            task_spec=task_spec,
+            split_tags=("val",),
+            preprocess_cfg=config["preprocess"],
+            augmentation_cfg=None,
+            train_mode=False,
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
+        empty_hint = f"video manifest: {video_manifest_path}"
+    else:
+        manifests_dir = Path(config["paths"]["manifests_dir"])
+        train_manifest = manifests_dir / "train.csv"
+        val_manifest = manifests_dir / "val.csv"
+
+        train_dataset = FaceFrameDataset(
+            manifest_path=train_manifest,
+            task_spec=task_spec,
+            transform=build_train_transform(
+                image_size,
+                aug_cfg=augmentation_cfg,
+                input_representation=input_representation,
+            ),
+        )
+        val_dataset = FaceFrameDataset(
+            manifest_path=val_manifest,
+            task_spec=task_spec,
+            transform=build_eval_transform(image_size, input_representation=input_representation),
+        )
+        empty_hint = f"manifests dir: {manifests_dir}"
 
     if len(train_dataset) == 0:
         raise ValueError(
-            f"Empty training dataset: {train_manifest}. "
-            "Run prepare_data.py first or check dataset roots/split config."
+            f"Empty training dataset from {empty_hint}. "
+            "Check split tags / manifest path / dataset roots."
         )
     if len(val_dataset) == 0:
         raise ValueError(
-            f"Empty validation dataset: {val_manifest}. "
-            "Run prepare_data.py first or check dataset roots/split config."
+            f"Empty validation dataset from {empty_hint}. "
+            "Check split tags / manifest path / dataset roots."
         )
 
     device = resolve_device(training_cfg.get("device", "auto"))
@@ -124,6 +165,8 @@ def main() -> None:
         num_classes=task_spec.num_classes,
         pretrained=training_cfg["pretrained"],
         dropout=training_cfg.get("dropout", 0.0),
+        freeze_backbone=bool(training_cfg.get("freeze_backbone", False)),
+        hidden_dim=int(training_cfg.get("hidden_dim", 0) or 0),
     ).to(device)
 
     loss_cfg = training_cfg.get("loss", {})
@@ -148,7 +191,16 @@ def main() -> None:
     )
     scheduler = CosineAnnealingLR(optimizer, T_max=int(training_cfg["epochs"]))
 
-    output_dir = ensure_dir(config["paths"]["checkpoints_dir"])
+    output_dir = ensure_dir(
+        config.get("paths", {}).get("checkpoints_dir", "outputs/checkpoints_protocol_frame")
+    )
+    resume_checkpoint = None
+    if args.resume_from:
+        resume_path = Path(args.resume_from)
+        if not resume_path.exists():
+            raise FileNotFoundError(f"Resume checkpoint not found: {resume_path}")
+        resume_checkpoint = torch.load(resume_path, map_location=device)
+        print(f"[INFO] resuming from checkpoint: {resume_path}")
 
     result = fit_model(
         model=model,
@@ -161,6 +213,7 @@ def main() -> None:
         task_spec=task_spec,
         training_cfg=training_cfg,
         output_dir=output_dir,
+        resume_checkpoint=resume_checkpoint,
     )
 
     print(f"[INFO] training done: {result}")

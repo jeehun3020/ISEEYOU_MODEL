@@ -520,6 +520,8 @@ def main() -> None:
         backbone=training_cfg["backbone"],
         num_classes=task_spec.num_classes,
         dropout=training_cfg.get("dropout", 0.0),
+        freeze_backbone=bool(training_cfg.get("freeze_backbone", False)),
+        hidden_dim=int(training_cfg.get("hidden_dim", 0) or 0),
         device=device,
     )
 
@@ -536,6 +538,8 @@ def main() -> None:
             backbone=ensemble_cfg.get("freq_backbone", training_cfg["backbone"]),
             num_classes=task_spec.num_classes,
             dropout=float(ensemble_cfg.get("freq_dropout", training_cfg.get("dropout", 0.0))),
+            freeze_backbone=bool(ensemble_cfg.get("freq_freeze_backbone", training_cfg.get("freeze_backbone", False))),
+            hidden_dim=int(ensemble_cfg.get("freq_hidden_dim", training_cfg.get("hidden_dim", 0)) or 0),
             device=device,
         )
 

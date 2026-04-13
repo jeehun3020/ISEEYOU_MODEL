@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from iseeyou.config import ensure_dir, load_config
 from iseeyou.constants import build_task_spec
+from iseeyou.data.protocol_dataset import VideoManifestSequenceDataset
 from iseeyou.data.sequence_dataset import VideoSequenceDataset
 from iseeyou.data.transforms import build_eval_transform, build_train_transform
 from iseeyou.engine.temporal import fit_temporal_model
@@ -22,6 +23,12 @@ from iseeyou.utils.seed import set_seed
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train temporal video classifier")
     parser.add_argument("--config", type=str, required=True, help="Path to config yaml")
+    parser.add_argument(
+        "--video-manifest",
+        type=str,
+        default="",
+        help="Optional protocol video_manifest.csv override",
+    )
     return parser.parse_args()
 
 
@@ -45,10 +52,6 @@ def main() -> None:
 
     task_spec = build_task_spec(config["task"])
 
-    manifests_dir = Path(config["paths"]["manifests_dir"])
-    train_manifest = manifests_dir / "train.csv"
-    val_manifest = manifests_dir / "val.csv"
-
     image_size = config["preprocess"]["image_size"]
     temporal_cfg = config.get("temporal", {})
     dataset_cfg = temporal_cfg.get("dataset", {})
@@ -63,41 +66,82 @@ def main() -> None:
     sampling = dataset_cfg.get("sampling", "random")
     min_frames = int(dataset_cfg.get("min_frames_per_video", 1))
     frame_mode = dataset_cfg.get("frame_mode", "rgb")
+    order_mode = dataset_cfg.get("order_mode", "preserve")
+    video_manifest_path = args.video_manifest or config.get("paths", {}).get("video_manifest_path", "")
+    train_aug = training_cfg.get("augmentation", {})
+    eval_transform = build_eval_transform(image_size, input_representation=input_representation)
 
-    train_dataset = VideoSequenceDataset(
-        manifest_path=train_manifest,
-        task_spec=task_spec,
-        sequence_length=sequence_length,
-        sampling=sampling,
-        min_frames_per_video=min_frames,
-        frame_mode=frame_mode,
-        train_mode=True,
-        transform=build_train_transform(
-            image_size,
-            aug_cfg=training_cfg.get("augmentation", {}),
-            input_representation=input_representation,
-        ),
-    )
-    val_dataset = VideoSequenceDataset(
-        manifest_path=val_manifest,
-        task_spec=task_spec,
-        sequence_length=sequence_length,
-        sampling="uniform",
-        min_frames_per_video=min_frames,
-        frame_mode=frame_mode,
-        train_mode=False,
-        transform=build_eval_transform(image_size, input_representation=input_representation),
-    )
+    if video_manifest_path:
+        train_dataset = VideoManifestSequenceDataset(
+            video_manifest_path=video_manifest_path,
+            task_spec=task_spec,
+            split_tags=("train",),
+            sequence_length=sequence_length,
+            sampling=sampling,
+            frame_mode=frame_mode,
+            order_mode=order_mode,
+            train_mode=True,
+            preprocess_cfg=config["preprocess"],
+            transform=build_train_transform(
+                image_size,
+                aug_cfg=train_aug,
+                input_representation=input_representation,
+            ),
+        )
+        val_dataset = VideoManifestSequenceDataset(
+            video_manifest_path=video_manifest_path,
+            task_spec=task_spec,
+            split_tags=("val",),
+            sequence_length=sequence_length,
+            sampling="uniform",
+            frame_mode=frame_mode,
+            order_mode=order_mode,
+            train_mode=False,
+            preprocess_cfg=config["preprocess"],
+            transform=eval_transform,
+        )
+        dataset_hint = f"video manifest: {video_manifest_path}"
+    else:
+        manifests_dir = Path(config["paths"]["manifests_dir"])
+        train_manifest = manifests_dir / "train.csv"
+        val_manifest = manifests_dir / "val.csv"
+        train_dataset = VideoSequenceDataset(
+            manifest_path=train_manifest,
+            task_spec=task_spec,
+            sequence_length=sequence_length,
+            sampling=sampling,
+            min_frames_per_video=min_frames,
+            frame_mode=frame_mode,
+            order_mode=order_mode,
+            train_mode=True,
+            transform=build_train_transform(
+                image_size,
+                aug_cfg=train_aug,
+                input_representation=input_representation,
+            ),
+        )
+        val_dataset = VideoSequenceDataset(
+            manifest_path=val_manifest,
+            task_spec=task_spec,
+            sequence_length=sequence_length,
+            sampling="uniform",
+            min_frames_per_video=min_frames,
+            frame_mode=frame_mode,
+            order_mode=order_mode,
+            train_mode=False,
+            transform=eval_transform,
+        )
+        dataset_hint = f"manifests dir: {manifests_dir}"
 
     if len(train_dataset) == 0:
         raise ValueError(
-            f"Empty temporal train dataset: {train_manifest}. "
-            "Run prepare_data.py first or lower temporal.dataset.min_frames_per_video."
+            f"Empty temporal train dataset from {dataset_hint}. "
+            "Check video manifest / split tags / dataset roots."
         )
     if len(val_dataset) == 0:
         raise ValueError(
-            f"Empty temporal val dataset: {val_manifest}. "
-            "Run prepare_data.py first or lower temporal.dataset.min_frames_per_video."
+            f"Empty temporal val dataset from {dataset_hint}. "
+            "Check video manifest / split tags / dataset roots."
         )
 
     device = resolve_device(training_cfg.get("device", "auto"))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +22,7 @@ class VideoSequenceDataset(Dataset):
         sampling: str = "uniform",
         min_frames_per_video: int = 1,
         frame_mode: str = "rgb",
+        order_mode: str = "preserve",
         train_mode: bool = False,
         transform=None,
     ):
@@ -31,12 +33,15 @@ class VideoSequenceDataset(Dataset):
         self.sampling = sampling
         self.min_frames_per_video = int(min_frames_per_video)
         self.frame_mode = frame_mode
+        self.order_mode = order_mode
         self.label_mapper = LabelMapper(task_spec)
 
         if self.sequence_length <= 0:
             raise ValueError("sequence_length must be > 0")
         if self.frame_mode not in {"rgb", "frame_diff"}:
             raise ValueError("frame_mode must be one of: rgb, frame_diff")
+        if self.order_mode not in {"preserve", "shuffle", "reverse"}:
+            raise ValueError("order_mode must be one of: preserve, shuffle, reverse")
 
         grouped: dict[str, list[dict[str, str]]] = {}
         for row in self.rows:
@@ -90,6 +95,12 @@ class VideoSequenceDataset(Dataset):
         n_frames = len(frame_paths)
 
         selected_idx = self._select_indices(n_frames)
+        if self.order_mode == "reverse":
+            selected_idx = selected_idx[::-1].copy()
+        elif self.order_mode == "shuffle" and len(selected_idx) > 1:
+            seed = int(hashlib.md5(sample["video_id"].encode("utf-8")).hexdigest()[:8], 16)
+            rng = np.random.default_rng(seed)
+            selected_idx = rng.permutation(selected_idx)
 
         raw_images = [np.array(Image.open(frame_paths[int(i)]).convert("RGB")) for i in selected_idx]
         if self.frame_mode == "frame_diff":

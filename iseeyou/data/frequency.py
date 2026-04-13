@@ -6,7 +6,17 @@ import numpy as np
 from PIL import Image
 
 
-REPRESENTATION_CHOICES: Final[set[str]] = {"rgb", "fft", "rgb_fft"}
+REPRESENTATION_CHOICES: Final[set[str]] = {
+    "rgb",
+    "fft",
+    "rgb_fft",
+    "fft_amplitude",
+    "fft_phase",
+    "fft_highpass",
+    "fft_lowpass",
+    "rgb_fft_amplitude",
+    "rgb_fft_phase",
+}
 
 
 def _normalize_to_uint8(x: np.ndarray) -> np.ndarray:
@@ -19,7 +29,11 @@ def _normalize_to_uint8(x: np.ndarray) -> np.ndarray:
     return np.clip(x * 255.0, 0.0, 255.0).astype(np.uint8)
 
 
-def _fft_rgb_image(image: Image.Image) -> Image.Image:
+def _fft_channels(
+    image: Image.Image,
+    *,
+    mode: str,
+) -> Image.Image:
     arr = np.asarray(image.convert("RGB"), dtype=np.float32)
     h, w, _ = arr.shape
     radius = max(1, min(h, w) // 16)
@@ -29,13 +43,26 @@ def _fft_rgb_image(image: Image.Image) -> Image.Image:
     for c in range(3):
         ch = arr[..., c]
         spec = np.fft.fftshift(np.fft.fft2(ch))
-        mag = np.log1p(np.abs(spec))
         y1 = max(0, cy - radius)
         y2 = min(h, cy + radius)
         x1 = max(0, cx - radius)
         x2 = min(w, cx + radius)
-        mag[y1:y2, x1:x2] = 0.0
-        out[..., c] = _normalize_to_uint8(mag)
+
+        if mode in {"amplitude", "highpass", "lowpass"}:
+            mag = np.log1p(np.abs(spec))
+            if mode == "highpass":
+                mag[y1:y2, x1:x2] = 0.0
+            elif mode == "lowpass":
+                keep = np.zeros_like(mag)
+                keep[y1:y2, x1:x2] = mag[y1:y2, x1:x2]
+                mag = keep
+            out[..., c] = _normalize_to_uint8(mag)
+        elif mode == "phase":
+            phase = np.angle(spec)
+            phase = (phase + np.pi) / (2.0 * np.pi)
+            out[..., c] = np.clip(phase * 255.0, 0.0, 255.0).astype(np.uint8)
+        else:
+            raise ValueError(f"Unsupported FFT mode: {mode}")
 
     return Image.fromarray(out, mode="RGB")
 
@@ -46,11 +73,35 @@ def convert_representation(image: Image.Image, representation: str) -> Image.Ima
         return image.convert("RGB")
 
     if mode == "fft":
-        return _fft_rgb_image(image)
+        return _fft_channels(image, mode="highpass")
+
+    if mode == "fft_amplitude":
+        return _fft_channels(image, mode="amplitude")
+
+    if mode == "fft_phase":
+        return _fft_channels(image, mode="phase")
+
+    if mode == "fft_highpass":
+        return _fft_channels(image, mode="highpass")
+
+    if mode == "fft_lowpass":
+        return _fft_channels(image, mode="lowpass")
 
     if mode == "rgb_fft":
         rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
-        fft = np.asarray(_fft_rgb_image(image), dtype=np.uint8)
+        fft = np.asarray(_fft_channels(image, mode="highpass"), dtype=np.uint8)
+        mixed = np.stack([rgb[..., 0], rgb[..., 1], fft[..., 2]], axis=-1)
+        return Image.fromarray(mixed, mode="RGB")
+
+    if mode == "rgb_fft_amplitude":
+        rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+        fft = np.asarray(_fft_channels(image, mode="amplitude"), dtype=np.uint8)
+        mixed = np.stack([rgb[..., 0], rgb[..., 1], fft[..., 2]], axis=-1)
+        return Image.fromarray(mixed, mode="RGB")
+
+    if mode == "rgb_fft_phase":
+        rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+        fft = np.asarray(_fft_channels(image, mode="phase"), dtype=np.uint8)
         mixed = np.stack([rgb[..., 0], rgb[..., 1], fft[..., 2]], axis=-1)
         return Image.fromarray(mixed, mode="RGB")
 

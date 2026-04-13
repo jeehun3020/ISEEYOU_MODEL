@@ -1,0 +1,156 @@
+seed: 42
+paths:
+  processed_faces_dir: data/processed/faces_allvideo_binary_textmask_protocol_youtube_mega
+  manifests_dir: data/manifests_allvideo_binary_textmask_protocol_youtube_mega
+  checkpoints_dir: outputs/checkpoints_allvideo_binary_textmask_protocol_youtube_mega
+  temporal_checkpoints_dir: outputs/checkpoints_temporal_allvideo_binary_textmask_protocol_youtube_mega_framediff
+  eval_dir: outputs/eval
+  inference_dir: outputs/inference
+task:
+  mode: binary
+  classes:
+  - real
+  - generated
+  positive_classes:
+  - generated
+preprocess:
+  target_fps: 1
+  max_frames_per_video: 6
+  image_size: 224
+  view_mode: full_frame
+  fallback_to_full_frame: true
+  text_mask:
+    enabled: true
+    top_ratio: 0.08
+    bottom_ratio: 0.18
+    left_ratio: 0.0
+    right_ratio: 0.0
+    position_mode: fixed
+    fill_mode: median
+  detector:
+    name: none
+    device: cpu
+training:
+  device: auto
+  backbone: efficientnet_b0
+  pretrained: true
+  dropout: 0.4
+  input_representation: rgb
+  grad_clip_norm: 1.0
+  batch_size: 32
+  num_workers: 2
+  epochs: 12
+  lr: 0.0001
+  weight_decay: 0.0005
+  amp: true
+  monitor: f1
+  loss:
+    label_smoothing: 0.05
+    use_class_weights: true
+  sampling:
+    balanced_sampler: true
+  early_stopping:
+    patience: 4
+    min_delta: 0.001
+  augmentation:
+    hflip_p: 0.5
+    color_jitter: true
+    color_jitter_strength: 0.2
+    random_erasing: true
+    random_erasing_p: 0.35
+    text_mask_aug:
+      enabled: true
+      p: 0.6
+      top_ratio_range:
+      - 0.0
+      - 0.1
+      bottom_ratio_range:
+      - 0.08
+      - 0.24
+      left_ratio_range:
+      - 0.0
+      - 0.0
+      right_ratio_range:
+      - 0.0
+      - 0.0
+      fill_mode: median
+inference:
+  batch_size: 32
+  aggregation: confidence_mean
+  input_representation: rgb
+  min_confidence: 0.55
+  topk_ratio: 0.5
+  conf_power: 2.0
+evaluation:
+  video_aggregation: confidence_mean
+  input_representation: rgb
+  topk_ratio: 0.5
+  conf_power: 2.0
+ensemble:
+  frame_weight: 0.5
+  temporal_weight: 0.5
+  freq_weight: 0.0
+  frame_aggregation: confidence_mean
+  frame_input_representation: rgb
+  freq_input_representation: fft
+  min_confidence: 0.55
+  topk_ratio: 0.5
+  conf_power: 2.0
+  decision_policy: argmax
+  fake_threshold: 0.5
+temporal:
+  input_representation: rgb
+  dataset:
+    sequence_length: 4
+    sampling: random
+    min_frames_per_video: 1
+    frame_mode: frame_diff
+    order_mode: preserve
+  model:
+    backbone: efficientnet_b0
+    pretrained: true
+    hidden_size: 128
+    num_layers: 1
+    bidirectional: true
+    dropout: 0.3
+    freeze_backbone: true
+  training:
+    device: auto
+    batch_size: 8
+    num_workers: 2
+    epochs: 5
+    lr: 0.0001
+    weight_decay: 0.0005
+    amp: false
+    monitor: f1
+    grad_clip_norm: 1.0
+    loss:
+      label_smoothing: 0.05
+      use_class_weights: true
+    sampling:
+      balanced_sampler: true
+    early_stopping:
+      patience: 2
+      min_delta: 0.001
+    augmentation:
+      hflip_p: 0.5
+      color_jitter: true
+      color_jitter_strength: 0.1
+      random_erasing: true
+      random_erasing_p: 0.2
+      text_mask_aug:
+        enabled: true
+        p: 0.6
+        top_ratio_range:
+        - 0.0
+        - 0.1
+        bottom_ratio_range:
+        - 0.08
+        - 0.24
+        left_ratio_range:
+        - 0.0
+        - 0.0
+        right_ratio_range:
+        - 0.0
+        - 0.0
+        fill_mode: median

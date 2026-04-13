@@ -49,13 +49,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-root",
         type=str,
-        default="data/raw/youtube_shorts",
+        default="data/raw/youtube_external",
         help="Root directory for downloaded videos",
     )
     parser.add_argument(
         "--report-path",
         type=str,
-        default="outputs/inference/shorts_download_report.json",
+        default="data/youtube_external_manifests/shorts_download_report.json",
         help="JSON report path",
     )
     parser.add_argument(

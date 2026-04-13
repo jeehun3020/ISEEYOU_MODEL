@@ -10,10 +10,21 @@ from .adapters import RawSample
 
 
 def resolve_group_key(sample: RawSample, group_priority: Sequence[str]) -> str:
-    for field_name in group_priority:
-        value = getattr(sample, field_name, "")
-        if value:
-            return f"{sample.dataset}|{field_name}|{value}"
+    for spec in group_priority:
+        field_names = [field.strip() for field in str(spec).split("+") if field.strip()]
+        if not field_names:
+            continue
+
+        values: list[str] = []
+        has_any = False
+        for field_name in field_names:
+            value = str(getattr(sample, field_name, "") or "")
+            if value:
+                has_any = True
+            values.append(f"{field_name}={value}")
+        if has_any:
+            joined = "|".join(values)
+            return f"{sample.dataset}|group|{joined}"
     return f"{sample.dataset}|video_id|{sample.video_id}"
 
 

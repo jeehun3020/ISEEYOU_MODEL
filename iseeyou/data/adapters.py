@@ -20,6 +20,16 @@ class RawSample:
     identity_id: str
     source_id: str
     original_id: str
+    platform_id: str = ""
+    creator_account: str = ""
+    generator_family: str = ""
+    template_id: str = ""
+    prompt_id: str = ""
+    scene_id: str = ""
+    source_url: str = ""
+    source_family: str = ""
+    raw_asset_group: str = ""
+    upload_pipeline: str = ""
 
     @property
     def sample_id(self) -> str:
@@ -27,14 +37,17 @@ class RawSample:
         return hashlib.md5(raw.encode("utf-8")).hexdigest()[:16]
 
 
-
 def _scan_files(root: Path, exts: set[str]) -> list[Path]:
     files: list[Path] = []
     for path in root.rglob("*"):
-        if path.is_file() and path.suffix.lower() in exts:
+        if not path.is_file():
+            continue
+        name = path.name
+        if name.startswith("._") or name.startswith("."):
+            continue
+        if path.suffix.lower() in exts:
             files.append(path)
     return sorted(files)
-
 
 
 def _identity_from_parts(parts: tuple[str, ...]) -> str:
@@ -44,12 +57,27 @@ def _identity_from_parts(parts: tuple[str, ...]) -> str:
     return parts[0] if parts else ""
 
 
+def _cfg_text(cfg: dict, key: str, default: str) -> str:
+    return str(cfg.get(key, default))
+
+
+def _cfg_limit(cfg: dict) -> int:
+    return int(cfg.get("max_samples", 0) or 0)
+
 
 def parse_ucf101(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
     class_name = cfg.get("class_name", "real")
     samples: list[RawSample] = []
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", "ucf101")
+    creator_account = _cfg_text(cfg, "creator_account", "ucf101")
+    generator_family = _cfg_text(cfg, "generator_family", "")
+    source_family = _cfg_text(cfg, "source_family", "benchmark_video")
+    upload_pipeline = _cfg_text(cfg, "upload_pipeline", "benchmark_native")
 
     for path in _scan_files(root, VIDEO_EXTS):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
         rel = path.relative_to(root).as_posix()
         stem = path.stem
         samples.append(
@@ -63,18 +91,32 @@ def parse_ucf101(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
                 identity_id="",
                 source_id=stem,
                 original_id=stem,
+                platform_id=platform_id,
+                creator_account=creator_account,
+                generator_family=generator_family,
+                scene_id=rel.split("/")[0] if "/" in rel else stem,
+                source_family=source_family,
+                raw_asset_group=stem,
+                upload_pipeline=upload_pipeline,
             )
         )
 
     return samples
 
 
-
 def parse_voxceleb2(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
     class_name = cfg.get("class_name", "real")
     samples: list[RawSample] = []
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", "voxceleb2")
+    creator_account = _cfg_text(cfg, "creator_account", "voxceleb2")
+    generator_family = _cfg_text(cfg, "generator_family", "")
+    source_family = _cfg_text(cfg, "source_family", "benchmark_video")
+    upload_pipeline = _cfg_text(cfg, "upload_pipeline", "benchmark_native")
 
     for path in _scan_files(root, VIDEO_EXTS):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
         rel_path = path.relative_to(root)
         rel = rel_path.as_posix()
         identity = _identity_from_parts(rel_path.parts)
@@ -90,18 +132,32 @@ def parse_voxceleb2(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
                 identity_id=identity,
                 source_id=rel_path.parent.as_posix(),
                 original_id=path.stem,
+                platform_id=platform_id,
+                creator_account=creator_account,
+                generator_family=generator_family,
+                scene_id=rel_path.parts[0] if rel_path.parts else "",
+                source_family=source_family,
+                raw_asset_group=identity,
+                upload_pipeline=upload_pipeline,
             )
         )
 
     return samples
 
 
-
 def parse_stylegan(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
     class_name = cfg.get("class_name", "generated")
     samples: list[RawSample] = []
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", "stylegan")
+    creator_account = _cfg_text(cfg, "creator_account", "stylegan")
+    generator_family = _cfg_text(cfg, "generator_family", "stylegan")
+    source_family = _cfg_text(cfg, "source_family", "synthetic_image")
+    upload_pipeline = _cfg_text(cfg, "upload_pipeline", "synthetic_native")
 
     for path in _scan_files(root, IMAGE_EXTS):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
         rel = path.relative_to(root).as_posix()
         stem = path.stem
         identity = stem.split("_")[0]
@@ -117,11 +173,16 @@ def parse_stylegan(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
                 identity_id=identity,
                 source_id=identity,
                 original_id=stem,
+                platform_id=platform_id,
+                creator_account=creator_account,
+                generator_family=generator_family,
+                source_family=source_family,
+                raw_asset_group=identity,
+                upload_pipeline=upload_pipeline,
             )
         )
 
     return samples
-
 
 
 def parse_faceforensicspp(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
@@ -135,8 +196,15 @@ def parse_faceforensicspp(dataset: str, root: Path, cfg: dict) -> list[RawSample
         "neuraltextures",
     }
     samples: list[RawSample] = []
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", "faceforensicspp")
+    creator_account = _cfg_text(cfg, "creator_account", "faceforensicspp")
+    source_family = _cfg_text(cfg, "source_family", "benchmark_manipulated")
+    upload_pipeline = _cfg_text(cfg, "upload_pipeline", "benchmark_native")
 
     for path in _scan_files(root, VIDEO_EXTS):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
         rel_path = path.relative_to(root)
         rel = rel_path.as_posix()
         rel_lower = rel.lower()
@@ -181,18 +249,32 @@ def parse_faceforensicspp(dataset: str, root: Path, cfg: dict) -> list[RawSample
                 identity_id=identity_id,
                 source_id=f"{method}:{original_id}",
                 original_id=original_id,
+                platform_id=platform_id,
+                creator_account=creator_account,
+                generator_family=method if class_name != "real" else "",
+                scene_id=original_id,
+                source_family=source_family,
+                raw_asset_group=original_id,
+                upload_pipeline=upload_pipeline,
             )
         )
 
     return samples
 
 
-
 def parse_celebdf(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
     include_real = cfg.get("include_real", False)
     samples: list[RawSample] = []
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", "celebdf")
+    creator_account = _cfg_text(cfg, "creator_account", "celebdf")
+    generator_family = _cfg_text(cfg, "generator_family", "celebdf")
+    source_family = _cfg_text(cfg, "source_family", "benchmark_manipulated")
+    upload_pipeline = _cfg_text(cfg, "upload_pipeline", "benchmark_native")
 
     for path in _scan_files(root, VIDEO_EXTS | IMAGE_EXTS):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
         rel_path = path.relative_to(root)
         rel = rel_path.as_posix()
         rel_lower = rel.lower()
@@ -229,8 +311,6 @@ def parse_celebdf(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
         else:
             identity_id = parts[0] if parts else stem
 
-        # For Celeb_V2 image-heavy splits, grouping by per-frame stem can leak identity.
-        # Use identity-derived original_id to keep same identity pair in one split.
         original_id = identity_id if media_type == "image" else stem
 
         samples.append(
@@ -244,21 +324,40 @@ def parse_celebdf(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
                 identity_id=identity_id,
                 source_id=rel_path.parent.as_posix(),
                 original_id=original_id,
+                platform_id=platform_id,
+                creator_account=creator_account,
+                generator_family=generator_family if class_name != "real" else "",
+                scene_id=identity_id,
+                source_family=source_family,
+                raw_asset_group=identity_id,
+                upload_pipeline=upload_pipeline,
             )
         )
 
     return samples
 
 
-
 def parse_generic(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
     media_type = cfg.get("media_type", "video")
     class_name = cfg.get("class_name", "real")
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", dataset)
+    creator_account = _cfg_text(cfg, "creator_account", dataset)
+    generator_family = _cfg_text(cfg, "generator_family", "")
+    template_id = _cfg_text(cfg, "template_id", "")
+    prompt_id = _cfg_text(cfg, "prompt_id", "")
+    scene_id = _cfg_text(cfg, "scene_id", "")
+    source_url = _cfg_text(cfg, "source_url", "")
+    source_family = _cfg_text(cfg, "source_family", dataset)
+    raw_asset_group = _cfg_text(cfg, "raw_asset_group", "")
+    upload_pipeline = _cfg_text(cfg, "upload_pipeline", platform_id)
 
     exts = VIDEO_EXTS if media_type == "video" else IMAGE_EXTS
     samples: list[RawSample] = []
 
     for path in _scan_files(root, exts):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
         rel = path.relative_to(root).as_posix()
         stem = path.stem
         samples.append(
@@ -272,6 +371,16 @@ def parse_generic(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
                 identity_id="",
                 source_id=stem,
                 original_id=stem,
+                platform_id=platform_id,
+                creator_account=creator_account,
+                generator_family=generator_family,
+                template_id=template_id,
+                prompt_id=prompt_id,
+                scene_id=scene_id,
+                source_url=source_url,
+                source_family=source_family,
+                raw_asset_group=raw_asset_group,
+                upload_pipeline=upload_pipeline,
             )
         )
 
@@ -281,8 +390,16 @@ def parse_generic(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
 def parse_youtube_shorts(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
     class_name = cfg.get("class_name", "real")
     samples: list[RawSample] = []
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", "youtube")
+    generator_family = _cfg_text(cfg, "generator_family", "")
+    source_family = _cfg_text(cfg, "source_family", "youtube_shorts")
+    upload_pipeline = _cfg_text(cfg, "upload_pipeline", "youtube_native")
+    raw_asset_group = _cfg_text(cfg, "raw_asset_group", "")
 
     for path in _scan_files(root, VIDEO_EXTS):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
         rel_path = path.relative_to(root)
         rel = rel_path.as_posix()
         parts = rel_path.parts
@@ -300,6 +417,93 @@ def parse_youtube_shorts(dataset: str, root: Path, cfg: dict) -> list[RawSample]
                 identity_id=channel_slug,
                 source_id=channel_slug,
                 original_id=stem,
+                platform_id=platform_id,
+                creator_account=channel_slug,
+                generator_family=generator_family,
+                scene_id=channel_slug,
+                source_url=f"https://www.youtube.com/shorts/{stem}",
+                source_family=source_family,
+                raw_asset_group=raw_asset_group,
+                upload_pipeline=upload_pipeline,
+            )
+        )
+
+    return samples
+
+
+def parse_youtube_dataset_downloaded(dataset: str, root: Path, cfg: dict) -> list[RawSample]:
+    default_class_name = cfg.get("class_name", "real")
+    samples: list[RawSample] = []
+    max_samples = _cfg_limit(cfg)
+    platform_id = _cfg_text(cfg, "platform_id", "youtube")
+    source_family = _cfg_text(cfg, "source_family", "youtube_dataset")
+    default_upload_pipeline = _cfg_text(cfg, "upload_pipeline", "youtube_dataset_packaged")
+
+    for path in _scan_files(root, VIDEO_EXTS):
+        if max_samples > 0 and len(samples) >= max_samples:
+            break
+        rel_path = path.relative_to(root)
+        rel = rel_path.as_posix()
+        parts = rel_path.parts
+        bucket_slug = parts[0] if parts else "unknown_bucket"
+        stem = path.stem
+
+        sidecar_path = path.with_suffix(".json")
+        sidecar_row: dict[str, str] = {}
+        if sidecar_path.exists():
+            try:
+                import json
+
+                payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+                raw_row = payload.get("row", {})
+                if isinstance(raw_row, dict):
+                    sidecar_row = {str(k): str(v) for k, v in raw_row.items()}
+            except Exception:
+                sidecar_row = {}
+
+        class_name = str(sidecar_row.get("resolved_label") or sidecar_row.get("suggested_label") or default_class_name).strip().lower()
+        if class_name == "fake":
+            class_name = "generated"
+
+        source_group = str(sidecar_row.get("source_group") or "").strip()
+        package_category = str(sidecar_row.get("package_category") or "").strip()
+        source_value = str(sidecar_row.get("source_value") or "").strip()
+        split_value = str(sidecar_row.get("split") or "").strip().lower()
+        generator_family = _cfg_text(cfg, "generator_family", "")
+        if not generator_family and class_name == "generated":
+            generator_family = (source_value or package_category or source_group or "youtube_dataset_generated").strip().lower()
+
+        source_url = (
+            str(sidecar_row.get("resolved_url") or "").strip()
+            or str(sidecar_row.get("shorts_url") or "").strip()
+            or str(sidecar_row.get("webpage_url") or "").strip()
+            or f"https://www.youtube.com/shorts/{stem}"
+        )
+        raw_asset_group = (source_group or package_category or bucket_slug).strip().lower()
+        upload_pipeline = str(sidecar_row.get("note") or default_upload_pipeline).strip().lower()
+        index_id = str(sidecar_row.get("index_id") or "").strip()
+
+        samples.append(
+            RawSample(
+                dataset=dataset,
+                path=path,
+                rel_path=rel,
+                media_type="video",
+                class_name=class_name,
+                video_id=str(sidecar_row.get("video_id") or stem).strip(),
+                identity_id=bucket_slug,
+                source_id=(source_value or bucket_slug).strip().lower(),
+                original_id=str(sidecar_row.get("video_id") or stem).strip(),
+                platform_id=platform_id,
+                creator_account=bucket_slug,
+                generator_family=generator_family,
+                template_id=package_category.lower(),
+                prompt_id=index_id,
+                scene_id=(source_group or bucket_slug).strip().lower(),
+                source_url=source_url,
+                source_family=source_family,
+                raw_asset_group=raw_asset_group,
+                upload_pipeline=upload_pipeline if upload_pipeline else default_upload_pipeline,
             )
         )
 
@@ -314,8 +518,8 @@ PARSERS = {
     "celebdf": parse_celebdf,
     "generic": parse_generic,
     "youtube_shorts": parse_youtube_shorts,
+    "youtube_dataset_downloaded": parse_youtube_dataset_downloaded,
 }
-
 
 
 def collect_samples_from_config(datasets_cfg: dict) -> list[RawSample]:
@@ -339,7 +543,6 @@ def collect_samples_from_config(datasets_cfg: dict) -> list[RawSample]:
         dataset_samples = parser_fn(dataset_name, root, cfg)
         max_samples = int(cfg.get("max_samples", 0) or 0)
         if max_samples > 0 and len(dataset_samples) > max_samples:
-            # TODO: support randomized but reproducible sampling with config seed.
             dataset_samples = dataset_samples[:max_samples]
         print(f"[INFO] {dataset_name}: {len(dataset_samples)} samples")
         all_samples.extend(dataset_samples)

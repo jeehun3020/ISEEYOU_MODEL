@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 
 from .base import BaseFaceDetector
-from .mtcnn_detector import MTCNNFaceDetector, RetinaFaceDetectorPlaceholder
 
 
 class NoOpFaceDetector(BaseFaceDetector):
@@ -18,6 +17,8 @@ def build_face_detector(detector_cfg: dict) -> BaseFaceDetector:
         return NoOpFaceDetector()
 
     if name == "mtcnn":
+        from .mtcnn_detector import MTCNNFaceDetector
+
         return MTCNNFaceDetector(
             device=detector_cfg.get("device", "auto"),
             min_face_size=detector_cfg.get("min_face_size", 40),
@@ -26,6 +27,8 @@ def build_face_detector(detector_cfg: dict) -> BaseFaceDetector:
         )
 
     if name == "retinaface":
+        from .mtcnn_detector import RetinaFaceDetectorPlaceholder
+
         return RetinaFaceDetectorPlaceholder()
 
     raise ValueError(f"Unsupported detector backend: {name}")

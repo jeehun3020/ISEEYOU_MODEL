@@ -7,10 +7,10 @@ source .venv/bin/activate
 
 REAL_CSV="data/youtube/shorts_urls_channels_real.csv"
 GEN_CSV="data/youtube/shorts_urls_channels_generated.csv"
-DOWNLOAD_ROOT="${DOWNLOAD_ROOT:-data/raw/youtube_shorts_binary}"
+DOWNLOAD_ROOT="${DOWNLOAD_ROOT:-data/raw/youtube_external/shorts_binary}"
 CONFIG_PATH="${CONFIG_PATH:-configs/baseline_binary_shorts.yaml}"
 CHECKPOINT_PATH="${CHECKPOINT_PATH:-outputs/checkpoints_shorts_binary/best.pt}"
-REPORT_PATH="${REPORT_PATH:-outputs/inference/shorts_binary_download_report.json}"
+REPORT_PATH="${REPORT_PATH:-data/youtube_external_manifests/shorts_binary_download_report.json}"
 
 # TODO: Increase this after securing more distinct real channels.
 LIMIT_PER_LABEL="${LIMIT_PER_LABEL:-120}"

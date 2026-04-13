@@ -1,0 +1,6 @@
+# Known corrupt or partially downloaded files to exclude from manifest generation.
+FaceForensics++_C23/DeepFakeDetection/27_01__hugging_happy__ZYCZ30C0.mp4
+/Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/train/real/a_real_927967/1jwEChbCaVE.mp4
+/Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/train/real/a_real_927967/Ato4hLCZ3sA.mp4
+/Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/train/real/a_real_927967/Hit9FtQ9d1I.mp4
+/Volumes/SAMSUNG/CapstoneData/youtube_downloads/youtube_dataset_split/train/real/a_real_927967/lTJ7dNFOjUY.mp4
